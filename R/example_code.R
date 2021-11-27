@@ -9,6 +9,18 @@ simd = meerva.sim.brn(n=4000, m=400,
                       alpha2 = c(0.98,0.94,0.95,0.95) ,
                       bx3s1 = c(0.05, 0, 0, NA, NA) ,
                       bx3s2 = c(NA,NA,NA) )
+
+# understanding the simd object
+#' simd$simd is the full dataset with x's and y's, (n = 4000 in above example)
+#' simd$id_val is length 400, identifies the validation sample id's??
+#' simd$id_non is length 3600, identifies the non validation sample
+#' simd$x_val is matrix of predictors (rows = 400) in validation set (not incld intercept)
+#' simd$y_val is vector of length 400 for the outcome in validation set
+#' simd$xs_val is matrix of surrogate predictors in validation set
+#' simd$ys_val is vector of surrogate predictors in validation set
+#' simd$xs_non is matrix of surrogate predictors in non validation set
+#' simd$ys_non is vector of surrogate outcome in non validation set
+
 # Read the simulated data to input data format
 x_val = simd$x_val
 y_val = simd$y_val

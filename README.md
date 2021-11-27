@@ -31,3 +31,7 @@ Note: *_J* refers to the 2017-2018 cycle of NHANES
 - "DEMO": Demographics files
 - "DXXAG": DEXA (gold standard fat mass measure) measures
 - "WHQ": Weight history questionnaire, includes self-reported height and weight
+
+**Running Analyses**
+
+1. 

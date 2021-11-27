@@ -2,7 +2,10 @@
 library(dplyr)
 library("Rlab")   
 setwd("C:/Users/user/OneDrive - Harvard University/GSAS/PHS/Fall 2021/BST 222/Project/Analysis")
-nhanes_all<-read.csv("nhanes_all.csv",header = T)
+setwd("/Volumes/GoogleDrive-101809232694958266345/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/") # matt path
+
+# nhanes_all<-read.csv("nhanes_all.csv",header = T)
+nhanes_all<-read.csv("data/nhanes_all.csv",header = T)
 
 #"BMX": Body measures exam, including measured height and weight
 #"BPQ": Blood pressure and cholesterol self-report questionnaire
@@ -67,16 +70,17 @@ htn_s <- rbern(n=1000,prob=sum(nhanes$htn_s==1,na.rm=T)/sum(!is.na(nhanes$htn_s)
 #xs_val <- bmi_s[1:400]
 # or x_val %>% bmi_m(.4) - w/ replacement
 
-x_val <- cbind(bmi_m[1:400],bmi_s[1:400]) #reference (gold-standard, measured)
-names(x_val)<-c("x1","x2")
-xs_non <- cbind(bmi_m[401:1000],bmi_s[401:1000]) #surrogate (self-reported)
-names(x_val)<-c("x1s","x2")
-xs_val <- cbind(bmi_m[1:400],bmi_s[1:400])
-names(x_val)<-c("x1s","x2")
+x_val <- cbind(x1 = bmi_m[1:400], x2 = bmi_s[1:400]) #reference (gold-standard, measured)
 
-y_val <- htn_m[1:400] #reference (gold-standard, measured)
-ys_non <- htn_s[401:1000] #surrogate (self-reported)
-ys_val <- htn_s[1:400]
+xs_non <- cbind(x1s = bmi_m[401:1000], x2 = bmi_s[401:1000]) #surrogate (self-reported)
+
+xs_val <- cbind(x1s = bmi_m[1:400], x2 = bmi_s[1:400])
+
+y_val <- htn_m[1:400] # true in validation (gold-standard, measured)
+
+ys_non <- htn_s[401:1000] # surrogate in non validation (self-reported)
+
+ys_val <- htn_s[1:400] # surrogate in validation
 
 #----------------------
 # Analyze the data

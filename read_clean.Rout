@@ -1,0 +1,118 @@
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin17.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+[Previously saved workspace restored]
+
+> Sys.time()
+[1] "2021-11-26 11:29:46 PST"
+> 
+> ###############################################################################
+> #
+> # Project:     Read and clean NHANES 2017-18 data as needed
+> # Author:      Matt Lee
+> # Date:        2021
+> # Title:       BST 222 Fall 2021 Group Project
+> # Description: Yes
+> #
+> ###############################################################################
+> 
+> rm(list=ls())
+> setwd("/Volumes/GoogleDrive-101809232694958266345/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/")
+> 
+> # load packages
+> library(haven)
+> library(readxl)
+> library(survey)
+Loading required package: grid
+Loading required package: Matrix
+Loading required package: survival
+
+Attaching package: ‘survey’
+
+The following object is masked from ‘package:graphics’:
+
+    dotchart
+
+> library(dplyr)
+
+Attaching package: ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+> library(PAutilities)
+package 'PAutilities' was built under R version 3.5.0
+> 
+> # read in data
+> demo.raw  <- read_xpt("data/raw-nhanes/DEMO_J.xpt")
+> bmx.raw   <- read_xpt("data/raw-nhanes/BMX_J.xpt")
+> bpq.raw   <- read_xpt("data/raw-nhanes/BPQ_J.xpt")
+> bpx.raw   <- read_xpt("data/raw-nhanes/BPX_J.xpt")
+> dexa.raw  <- read_xpt("data/raw-nhanes/DXXAG_J.xpt")
+> whq.raw   <- read_xpt("data/raw-nhanes/WHQ_J.xpt")
+> 
+> 
+> # merge data 
+> nhanes <- demo.raw %>% 
++     left_join(bmx.raw, by = "SEQN") %>% 
++     left_join(bpq.raw, by = "SEQN") %>% 
++     left_join(bpx.raw, by = "SEQN") %>% 
++     left_join(dexa.raw, by = "SEQN") %>% 
++     left_join(whq.raw, by = "SEQN")
+> 
+> names(nhanes)
+  [1] "SEQN"     "SDDSRVYR" "RIDSTATR" "RIAGENDR" "RIDAGEYR" "RIDAGEMN"
+  [7] "RIDRETH1" "RIDRETH3" "RIDEXMON" "RIDEXAGM" "DMQMILIZ" "DMQADFC" 
+ [13] "DMDBORN4" "DMDCITZN" "DMDYRSUS" "DMDEDUC3" "DMDEDUC2" "DMDMARTL"
+ [19] "RIDEXPRG" "SIALANG"  "SIAPROXY" "SIAINTRP" "FIALANG"  "FIAPROXY"
+ [25] "FIAINTRP" "MIALANG"  "MIAPROXY" "MIAINTRP" "AIALANGA" "DMDHHSIZ"
+ [31] "DMDFMSIZ" "DMDHHSZA" "DMDHHSZB" "DMDHHSZE" "DMDHRGND" "DMDHRAGZ"
+ [37] "DMDHREDZ" "DMDHRMAZ" "DMDHSEDZ" "WTINT2YR" "WTMEC2YR" "SDMVPSU" 
+ [43] "SDMVSTRA" "INDHHIN2" "INDFMIN2" "INDFMPIR" "BMDSTATS" "BMXWT"   
+ [49] "BMIWT"    "BMXRECUM" "BMIRECUM" "BMXHEAD"  "BMIHEAD"  "BMXHT"   
+ [55] "BMIHT"    "BMXBMI"   "BMXLEG"   "BMILEG"   "BMXARML"  "BMIARML" 
+ [61] "BMXARMC"  "BMIARMC"  "BMXWAIST" "BMIWAIST" "BMXHIP"   "BMIHIP"  
+ [67] "BPQ020"   "BPQ030"   "BPD035"   "BPQ040A"  "BPQ050A"  "BPQ080"  
+ [73] "BPQ060"   "BPQ070"   "BPQ090D"  "BPQ100D"  "PEASCCT1" "BPXCHR"  
+ [79] "BPAARM"   "BPACSZ"   "BPXPLS"   "BPXPULS"  "BPXPTY"   "BPXML1"  
+ [85] "BPXSY1"   "BPXDI1"   "BPAEN1"   "BPXSY2"   "BPXDI2"   "BPAEN2"  
+ [91] "BPXSY3"   "BPXDI3"   "BPAEN3"   "BPXSY4"   "BPXDI4"   "BPAEN4"  
+ [97] "DXXAGST"  "DXXVATV"  "DXXANTV"  "DXXGYTV"  "DXXANFM"  "DXXANLM" 
+[103] "DXXANTOM" "DXXGYFM"  "DXXGYLM"  "DXXGYTOM" "DXXAGRAT" "DXXAPFAT"
+[109] "DXXGPFAT" "DXXSATA"  "DXXSATM"  "DXXSATV"  "DXXTATA"  "DXXTATM" 
+[115] "DXXTATV"  "DXXVFATA" "DXXVFATM" "DXXVFATV" "WHD010"   "WHD020"  
+[121] "WHQ030"   "WHQ040"   "WHD050"   "WHQ060"   "WHQ070"   "WHD080A" 
+[127] "WHD080B"  "WHD080C"  "WHD080D"  "WHD080E"  "WHD080F"  "WHD080G" 
+[133] "WHD080H"  "WHD080I"  "WHD080J"  "WHD080K"  "WHD080M"  "WHD080N" 
+[139] "WHD080O"  "WHD080P"  "WHD080Q"  "WHD080R"  "WHD080S"  "WHD080T" 
+[145] "WHD080U"  "WHD080L"  "WHQ225"   "WHD110"   "WHD120"   "WHD130"  
+[151] "WHD140"   "WHQ150"   "WHQ190"   "WHQ200"  
+> 
+> # save data
+> write.csv(nhanes, "data/nhanes_all.csv")
+> 
+> 
+> proc.time()
+   user  system elapsed 
+  2.679   0.135   2.972 
