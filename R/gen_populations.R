@@ -21,20 +21,37 @@ Sys.time()
 #
 ###############################################################################
 
+library(fastDummies)
+
 # MUST SET WORKING DIRECTORY TO PROJECT ROOT
-setwd("/Volumes/GoogleDrive-101809232694958266345/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj")
+# setwd("/Volumes/GoogleDrive-101809232694958266345/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj")
+setwd("/Volumes/GoogleDrive/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/") # imact
+
 
 # METHODS FOR GENERATING ----------------------------------------------
 
-# Generate baseline population of size n with even distributions of ethnicity, gender, and obesity
+# expit helper
+expit <- function(x) {
+    out = exp(x) / (1 + exp(x))
+    return(out)
+}
+
+# Generate baseline population of size n with even (approx) sizes of ethnicity, gender, and obesity
 #
 # @param n size of the population to generate framework for
 # @return data.frame with number of rows = n, with sampled ethnicity, obesity status, and gender
 sim_baseline <- function(n) {
     dat          = data.frame(id = 1:n)
     dat$eth5     = sample(x = c("Hispanic", "NH Asian", "NH Black", "NH White", "Other"), replace = TRUE, size = n) 
-    dat$ob       = sample(x = c("Obese", "Overweight", "Under/Normal"), replace = TRUE, size = n) 
     dat$gender   = sample(x = c("Male", "Female"), replace = TRUE, size = n)
+    dat$ob       = sample(x = c("Obese", "Overweight", "Under/Normal"), replace = TRUE, size = n) 
+
+    # factor 
+    dat$eth5     = factor(dat$eth5, levels = c("Hispanic", "NH Asian", "NH Black", "NH White", "Other"))
+    dat$gender   = factor(dat$gender, levels = c("Male", "Female"))
+    dat$ob       = factor(dat$ob, levels = c("Under/Normal", "Overweight", "Obese"))
+
+    dat = dummy_cols(dat, select_columns = c("eth5", "gender", "ob"), remove_first_dummy = TRUE)
 
     return(dat)
 }
@@ -47,20 +64,35 @@ sim_baseline <- function(n) {
 # @param popsize size of the population to generate case 1 misclassified data
 sim_case1 <- function(popsize) {
     dat = sim_baseline(n = popsize)
-    params = read.csv("out/case1_params.csv") 
-    ids = sample(dat$id, params$p.htn_misclassified*popsize) # id's to misclassify HTN for   
+
+    # param files from NHANES
+    bmi_m_params = readRDS("out/params/generate_bmi_m_gamma.Rds") # bmi_m gamma fit parameters
+    htn_m_params = readRDS("out/params/generate_htn_m_model_coefs.Rds") # htn_m model params
+    bmi_s_params = readRDS("out/params/c1_generate_bmi_s_coefs.Rds") # bmi_s params
+    htn_s_params = readRDS("out/params/c1_generate_htn_s_coefs.Rds") # htn_s params
+    
+    
     for (i in 1:nrow(dat)) {
-        # measured BMI
-        dat[i, "bmi_m"] = rnorm(1, mean = params$mu.bmi_m, sd = params$sigma.bmi_m)
+        # Draw measured BMI from gamma with appropriate hypers (same for all cases)
+        shape = bmi_m_params$shape.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"] & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        rate  = bmi_m_params$rate.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"]  & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        dat[i, "bmi_m"] = rgamma(1, shape = shape, rate = rate)
 
-        # misclassified BMI
-        dat[i, "bmi_s"] = dat[i, "bmi_m"] + rnorm(1, mean = params$mu.bmi_err, sd = params$sigma.bmi_err)
+        # Draw measured HTN from binomial with p specific to eth/gender/ob (same for all cases)
+        x = c(1, dat[i, "bmi_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_m_params
+        dat[i, "htn_m"] = rbinom(n = 1, size = 1, p = expit(p))
 
-        # measured HTN status
-        dat[i, "htn_m"] = rbinom(1, 1, p = params$p.htn_m)
+        # Draw misclassified BMI value conditional on bmi_m
+        x = c(1, dat[i, "bmi_m"])
+        dat[i, "bmi_s"] = t(x) %*% bmi_s_params[1:(length(bmi_s_params)-1)] + rnorm(1, mean = 0, sd = sqrt(bmi_s_params[length(bmi_s_params)]))
 
-        # misclassify HTN
-        dat[i, "htn_s"] = ifelse((dat[i, "id"] %in% ids), abs(dat[i, "htn_m"] - 1), dat[i, "htn_m"])
+        # Draw misclassified HTN value conditional on htn_m
+        x = c(1, dat[i, "htn_m"])
+        p = t(x) %*% htn_s_params
+        dat[i, "htn_s"] = rbinom(n = 1, size = 1, p = expit(p))
     }
     return(dat)
 }
@@ -73,26 +105,34 @@ sim_case1 <- function(popsize) {
 # @param popsize size of the population to generate case 2 misclassified data
 sim_case2 <- function(popsize) {
     dat = sim_baseline(n = popsize)
-    params = read.csv("out/case2_params.csv") 
     
-    for (ethcat in unique(params$eth5)) {
-        ids = sample(dat$id[dat$eth5 == ethcat], 
-                     params$p.htn_misclassified[params$eth5 == ethcat]*nrow(dat[dat$eth5 == ethcat,])) # id's to misclassify HTN for   
-        for (i in dat$id[dat$eth5 == ethcat]) {
-            # measured BMI
-            dat[i, "bmi_m"] = rnorm(1, mean = params$mu.bmi_m[params$eth5 == ethcat], 
-                sd = params$sigma.bmi_m[params$eth5 == ethcat])
+    # param files from NHANES
+    bmi_m_params = readRDS("out/params/generate_bmi_m_gamma.Rds") # bmi_m gamma fit parameters
+    htn_m_params = readRDS("out/params/generate_htn_m_model_coefs.Rds") # htn_m model params
+    bmi_s_params = readRDS("out/params/c2_generate_bmi_s_coefs.Rds") # bmi_s params
+    htn_s_params = readRDS("out/params/c2_generate_htn_s_coefs.Rds") # htn_s params
+    
+    for (i in 1:nrow(dat)) {
+        # Draw measured BMI from gamma with appropriate hypers (same for all cases)
+        shape = bmi_m_params$shape.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"] & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        rate  = bmi_m_params$rate.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"]  & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        dat[i, "bmi_m"] = rgamma(1, shape = shape, rate = rate)
 
-            # misclassified BMI
-            dat[i, "bmi_s"] = dat[i, "bmi_m"] + rnorm(1, mean = params$mu.bmi_err[params$eth5 == ethcat], 
-                sd = params$sigma.bmi_err[params$eth5 == ethcat])
+        # Draw measured HTN from binomial with p specific to eth/gender/ob (same for all cases)
+        x = c(1, dat[i, "bmi_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_m_params
+        dat[i, "htn_m"] = rbinom(n = 1, size = 1, p = expit(p))
+        
+        # Draw misclassified BMI value conditional on bmi_m and eth
+        x = c(1, dat[i, "bmi_m"], dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"])
+        dat[i, "bmi_s"] = t(x) %*% bmi_s_params[1:(length(bmi_s_params)-1)] + rnorm(1, mean = 0, sd = sqrt(bmi_s_params[length(bmi_s_params)]))
 
-            # measured HTN status
-            dat[i, "htn_m"] = rbinom(1, 1, p = params$p.htn_m[params$eth5 == ethcat])
-
-            # misclassify HTN
-            dat[i, "htn_s"] = ifelse(dat[i, "id"] %in% ids, abs(dat[i, "htn_m"] - 1), dat[i, "htn_m"])
-        }
+        # Draw misclassified HTN value conditional on htn_m
+        x = c(1, dat[i, "htn_m"], dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"])
+        p = t(x) %*% htn_s_params
+        dat[i, "htn_s"] = rbinom(n = 1, size = 1, p = expit(p))
     }
     return(dat)
 }
@@ -106,26 +146,34 @@ sim_case2 <- function(popsize) {
 # @param popsize size of the population to generate case 3 misclassified data
 sim_case3 <- function(popsize) {
     dat = sim_baseline(n = popsize)
-    params = read.csv("out/case3_params.csv") 
     
-    for (gen in unique(params$gender)) {
-        ids = sample(dat$id[dat$gender == gen], 
-                     params$p.htn_misclassified[params$gender == gen]*nrow(dat[dat$gender == gen,])) # id's to misclassify HTN for   
-        for (i in dat$id[dat$gender == gen]) {
-            # measured BMI
-            dat[i, "bmi_m"] = rnorm(1, mean = params$mu.bmi_m[params$gender == gen], 
-                sd = params$sigma.bmi_m[params$gender == gen])
+    # param files from NHANES
+    bmi_m_params = readRDS("out/params/generate_bmi_m_gamma.Rds") # bmi_m gamma fit parameters
+    htn_m_params = readRDS("out/params/generate_htn_m_model_coefs.Rds") # htn_m model params
+    bmi_s_params = readRDS("out/params/c3_generate_bmi_s_coefs.Rds") # bmi_s params
+    htn_s_params = readRDS("out/params/c3_generate_htn_s_coefs.Rds") # htn_s params
+    
+    for (i in 1:nrow(dat)) {
+        # Draw measured BMI from gamma with appropriate hypers (same for all cases)
+        shape = bmi_m_params$shape.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"] & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        rate  = bmi_m_params$rate.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"]  & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        dat[i, "bmi_m"] = rgamma(1, shape = shape, rate = rate)
 
-            # misclassified BMI
-            dat[i, "bmi_s"] = dat[i, "bmi_m"] + rnorm(1, mean = params$mu.bmi_err[params$gender == gen], 
-                sd = params$sigma.bmi_err[params$gender == gen])
+        # Draw measured HTN from binomial with p specific to eth/gender/ob (same for all cases)
+        x = c(1, dat[i, "bmi_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_m_params
+        dat[i, "htn_m"] = rbinom(n = 1, size = 1, p = expit(p))
+        
+        # Draw misclassified BMI value conditional on bmi_m and gender
+        x = c(1, dat[i, "bmi_m"], dat[i, "gender_Female"])
+        dat[i, "bmi_s"] = t(x) %*% bmi_s_params[1:(length(bmi_s_params)-1)] + rnorm(1, mean = 0, sd = sqrt(bmi_s_params[length(bmi_s_params)]))
 
-            # measured HTN status
-            dat[i, "htn_m"] = rbinom(1, 1, p = params$p.htn_m[params$gender == gen])
-
-            # misclassify HTN
-            dat[i, "htn_s"] = ifelse(dat[i, "id"] %in% ids, abs(dat[i, "htn_m"] - 1), dat[i, "htn_m"])
-        }
+        # Draw misclassified HTN value conditional on htn_m
+        x = c(1, dat[i, "htn_m"], dat[i, "gender_Female"])
+        p = t(x) %*% htn_s_params
+        dat[i, "htn_s"] = rbinom(n = 1, size = 1, p = expit(p))
     }
     return(dat)
 }
@@ -138,31 +186,39 @@ sim_case3 <- function(popsize) {
 # @param popsize size of the population to generate case 3 misclassified data
 sim_case4 <- function(popsize) {
     dat = sim_baseline(n = popsize)
-    params = read.csv("out/case4_params.csv") 
     
-    for (obcat in unique(params$ob)) {
-        ids = sample(dat$id[dat$ob == obcat], 
-                     params$p.htn_misclassified[params$ob == obcat]*nrow(dat[dat$ob == obcat,])) # id's to misclassify HTN for   
-        for (i in dat$id[dat$ob == obcat]) {
-            # measured BMI
-            dat[i, "bmi_m"] = rnorm(1, mean = params$mu.bmi_m[params$ob == obcat], 
-                sd = params$sigma.bmi_m[params$ob == obcat])
+    # param files from NHANES
+    bmi_m_params = readRDS("out/params/generate_bmi_m_gamma.Rds") # bmi_m gamma fit parameters
+    htn_m_params = readRDS("out/params/generate_htn_m_model_coefs.Rds") # htn_m model params
+    bmi_s_params = readRDS("out/params/c4_generate_bmi_s_coefs.Rds") # bmi_s params
+    htn_s_params = readRDS("out/params/c4_generate_htn_s_coefs.Rds") # htn_s params
+    
+    for (i in 1:nrow(dat)) {
+        # Draw measured BMI from gamma with appropriate hypers (same for all cases)
+        shape = bmi_m_params$shape.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"] & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        rate  = bmi_m_params$rate.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"]  & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        dat[i, "bmi_m"] = rgamma(1, shape = shape, rate = rate)
 
-            # misclassified BMI
-            dat[i, "bmi_s"] = dat[i, "bmi_m"] + rnorm(1, mean = params$mu.bmi_err[params$ob == obcat], 
-                sd = params$sigma.bmi_err[params$ob == obcat])
+        # Draw measured HTN from binomial with p specific to eth/gender/ob (same for all cases)
+        x = c(1, dat[i, "bmi_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_m_params
+        dat[i, "htn_m"] = rbinom(n = 1, size = 1, p = expit(p))
+        
+        # Draw misclassified BMI value conditional on bmi_m and obesity
+        x = c(1, dat[i, "bmi_m"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        dat[i, "bmi_s"] = t(x) %*% bmi_s_params[1:(length(bmi_s_params)-1)] + rnorm(1, mean = 0, sd = sqrt(bmi_s_params[length(bmi_s_params)]))
 
-            # measured HTN status
-            dat[i, "htn_m"] = rbinom(1, 1, p = params$p.htn_m[params$ob == obcat])
-
-            # misclassify HTN
-            dat[i, "htn_s"] = ifelse(dat[i, "id"] %in% ids, abs(dat[i, "htn_m"] - 1), dat[i, "htn_m"])
-        }
+        # Draw misclassified HTN value conditional on htn_m and obesity
+        x = c(1, dat[i, "htn_m"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_s_params
+        dat[i, "htn_s"] = rbinom(n = 1, size = 1, p = expit(p))
     }
     return(dat)
 }
 
-# Simulate case 4 data
+# Simulate case 5 data
 # 
 # Case 5 corresponds to the case where individuals are misclassified 
 # by gender, eth, and obesity category
@@ -170,30 +226,38 @@ sim_case4 <- function(popsize) {
 # @param popsize size of the population to generate case 3 misclassified data
 sim_case5 <- function(popsize) {
     dat = sim_baseline(n = popsize)
-    params = read.csv("out/case5_params.csv") 
     
-    for (ethcat in unique(params$eth5)) {
-        for (gen in unique(params$gender)) {
-            for (obcat in unique(params$ob)) {
-                ids = sample(dat$id[dat$eth5 == ethcat & dat$gender == gen & dat$ob == obcat], 
-                     params$p.htn_misclassified[params$eth5 == ethcat & params$gender == gen & params$ob == obcat]*nrow(dat[dat$eth5 == ethcat & dat$gender == gen & dat$ob == obcat,])) # id's to misclassify HTN for   
-                for (i in dat$id[dat$eth5 == ethcat & dat$gender == gen & dat$ob == obcat]) {
-                    # measured BMI
-                    dat[i, "bmi_m"] = rnorm(1, mean = params$mu.bmi_m[params$eth5 == ethcat & params$gender == gen & params$ob == obcat], 
-                        sd = params$sigma.bmi_m[params$eth5 == ethcat & params$gender == gen & params$ob == obcat])
+    # param files from NHANES
+    bmi_m_params = readRDS("out/params/generate_bmi_m_gamma.Rds") # bmi_m gamma fit parameters
+    htn_m_params = readRDS("out/params/generate_htn_m_model_coefs.Rds") # htn_m model params
+    bmi_s_params = readRDS("out/params/c5_generate_bmi_s_coefs.Rds") # bmi_s params
+    htn_s_params = readRDS("out/params/c5_generate_htn_s_coefs.Rds") # htn_s params
+    
+    for (i in 1:nrow(dat)) {
+        # Draw measured BMI from gamma with appropriate hypers (same for all cases)
+        shape = bmi_m_params$shape.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"] & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        rate  = bmi_m_params$rate.bmi_m[bmi_m_params$eth5 == dat[i, "eth5"]  & bmi_m_params$gender == dat[i, "gender"] & bmi_m_params$ob == dat[i, "ob"]]
+        dat[i, "bmi_m"] = rgamma(1, shape = shape, rate = rate)
 
-                    # misclassified BMI
-                    dat[i, "bmi_s"] = dat[i, "bmi_m"] + rnorm(1, mean = params$mu.bmi_err[params$eth5 == ethcat & params$gender == gen & params$ob == obcat], 
-                        sd = params$sigma.bmi_err[params$eth5 == ethcat & params$gender == gen & params$ob == obcat])
+        # Draw measured HTN from binomial with p specific to eth/gender/ob (same for all cases)
+        x = c(1, dat[i, "bmi_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_m_params
+        dat[i, "htn_m"] = rbinom(n = 1, size = 1, p = expit(p))
+        
+        # Draw misclassified BMI value conditional on bmi_m and all L
+        x = c(1, dat[i, "bmi_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        dat[i, "bmi_s"] = t(x) %*% bmi_s_params[1:(length(bmi_s_params)-1)] + rnorm(1, mean = 0, sd = sqrt(bmi_s_params[length(bmi_s_params)]))
 
-                    # measured HTN status
-                    dat[i, "htn_m"] = rbinom(1, 1, p = params$p.htn_m[params$eth5 == ethcat & params$gender == gen & params$ob == obcat])
-
-                    # misclassify HTN
-                    dat[i, "htn_s"] = ifelse(dat[i, "id"] %in% ids, abs(dat[i, "htn_m"] - 1), dat[i, "htn_m"])
-                }
-            }
-        }
+        # Draw misclassified HTN value conditional on htn_m and all L
+        x = c(1, dat[i, "htn_m"], 
+              dat[i, "eth5_NH Asian"], dat[i, "eth5_NH Black"], dat[i, "eth5_NH White"], dat[i, "eth5_Other"], 
+              dat[i, "gender_Female"], dat[i, "ob_Overweight"], dat[i, "ob_Obese"])
+        p = t(x) %*% htn_s_params
+        dat[i, "htn_s"] = rbinom(n = 1, size = 1, p = expit(p))
     }
     return(dat)
 }

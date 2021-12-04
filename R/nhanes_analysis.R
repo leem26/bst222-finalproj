@@ -13,7 +13,9 @@ Sys.time()
 ###############################################################################
 
 rm(list=ls())
-setwd("/Volumes/GoogleDrive-101809232694958266345/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/")
+# setwd("/Volumes/GoogleDrive-101809232694958266345/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/") 
+setwd("/Volumes/GoogleDrive/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/") # imact
+
 
 # load packages
 library(haven)
@@ -86,6 +88,7 @@ nhanes$bmi_m <- nhanes$bmxbmi
 nhanes$ob <- 
     ifelse(nhanes$bmxbmi <= 25, "Under/Normal", 
         ifelse(nhanes$bmxbmi < 30, "Overweight", "Obese"))
+nhanes$ob <- factor(nhanes$ob, levels = c("Under/Normal", "Overweight", "Obese"))
 
 # self reported weight (in lbs)
 nhanes$whd020 <- ifelse(nhanes$whd020 <= 500, nhanes$whd020, NA) # set don't know to missing
@@ -113,80 +116,109 @@ nhanes$htn_s <-
 # bmi_error is defined as measured BMI - true BMI, since accoring to
 # classical measurement model, X = T + error => X - T = error
 
-# CASE 1: misclassification is random marginally
+# distribution assumptions:
+# BMI is gamma
+# HTN is bernoulli 
+# BMI_error is normal
 
-test = nhanes %>% 
-    mutate(bmi_error = bmi_s - bmi_m)
-hist(test$bmi_error)
-
-case1_tab <- 
+# measured BMI parameters, conditional on ob, eth5, gender, 
+# to be used across all 5 cases 
+bmi_m_params <- 
     nhanes %>% 
-    mutate(bmi_error = bmi_s - bmi_m) %>% 
-    summarize(mu.bmi_m = mean(bmi_m, na.rm = TRUE), sigma.bmi_m = sd(bmi_m, na.rm = TRUE),
-              mu.bmi_s = mean(bmi_s, na.rm = TRUE), sigma.bmi_s = sd(bmi_s, na.rm = TRUE),
-              mu.bmi_err = mean(bmi_error, na.rm = TRUE), sigma.bmi_err = sd(bmi_error, na.rm = TRUE),
-              p.htn_m = mean(htn_m, na.rm = TRUE), p.htn_s = mean(htn_s, na.rm = TRUE),
-              p.htn_misclassified = mean(htn_m != htn_s, na.rm = TRUE)) %>% 
-    drop_na() %>% 
-    write.csv(., "out/case1_params.csv")  
+    drop_na(ob) %>% 
+    group_by(eth5, gender, ob) %>% 
+    summarize(shape.bmi_m = fitdistrplus::fitdist(as.vector(na.omit(bmi_m)), "gamma")[[1]][1], 
+              rate.bmi_m  = fitdistrplus::fitdist(as.vector(na.omit(bmi_m)), "gamma")[[1]][2]) 
 
-# CASE 2: misclassification depends on ethnicity alone
-case2_tab <- 
-    nhanes %>% 
-    group_by(eth5) %>% 
-    mutate(bmi_error = bmi_s - bmi_m) %>% 
-    summarize(mu.bmi_m = mean(bmi_m, na.rm = TRUE), sigma.bmi_m = sd(bmi_m, na.rm = TRUE),
-              mu.bmi_s = mean(bmi_s, na.rm = TRUE), sigma.bmi_s = sd(bmi_s, na.rm = TRUE),
-              mu.bmi_err = mean(bmi_error, na.rm = TRUE), sigma.bmi_err = sd(bmi_error, na.rm = TRUE),
-              p.htn_m = mean(htn_m, na.rm = TRUE), p.htn_s = mean(htn_s, na.rm = TRUE),
-              p.htn_misclassified = mean(htn_m != htn_s, na.rm = TRUE)) %>% 
-    drop_na() %>% 
-    write.csv(., "out/case2_params.csv")    
+write.csv(bmi_m_params, file = "out/generate_bmi_m_gamma.csv")
+saveRDS(bmi_m_params, file = "out/params/generate_bmi_m_gamma.Rds")
 
-# CASE 3: misclassification depends on gender alone
-case3_tab <- 
-    nhanes %>% 
-    group_by(gender) %>% 
-    mutate(bmi_error = bmi_s - bmi_m) %>% 
-    summarize(mu.bmi_m = mean(bmi_m, na.rm = TRUE), sigma.bmi_m = sd(bmi_m, na.rm = TRUE),
-              mu.bmi_s = mean(bmi_s, na.rm = TRUE), sigma.bmi_s = sd(bmi_s, na.rm = TRUE),
-              mu.bmi_err = mean(bmi_error, na.rm = TRUE), sigma.bmi_err = sd(bmi_error, na.rm = TRUE),
-              p.htn_m = mean(htn_m, na.rm = TRUE), p.htn_s = mean(htn_s, na.rm = TRUE),
-              p.htn_misclassified = mean(htn_m != htn_s, na.rm = TRUE)) %>% 
-    drop_na() %>% 
-    write.csv(., "out/case3_params.csv")   
-
-# CASE 4: misclassification depends on obesity alone   
-case4_tab <- 
-    nhanes %>% 
-    group_by(ob) %>% 
-    mutate(bmi_error = bmi_s - bmi_m) %>% 
-    summarize(mu.bmi_m = mean(bmi_m, na.rm = TRUE), sigma.bmi_m = sd(bmi_m, na.rm = TRUE),
-              mu.bmi_s = mean(bmi_s, na.rm = TRUE), sigma.bmi_s = sd(bmi_s, na.rm = TRUE),
-              mu.bmi_err = mean(bmi_error, na.rm = TRUE), sigma.bmi_err = sd(bmi_error, na.rm = TRUE),
-              p.htn_m = mean(htn_m, na.rm = TRUE), p.htn_s = mean(htn_s, na.rm = TRUE),
-              p.htn_misclassified = mean(htn_m != htn_s, na.rm = TRUE)) %>% 
-    drop_na() %>% 
-    write.csv(., "out/case4_params.csv")   
-
-# CASE 5: misclassification depends on obesity, ethnicity, and gender status
-case5_tab <- 
-    nhanes %>% 
-    group_by(ob, eth5, gender) %>% 
-    mutate(bmi_error = bmi_s - bmi_m) %>% 
-    summarize(mu.bmi_m = mean(bmi_m, na.rm = TRUE), sigma.bmi_m = sd(bmi_m, na.rm = TRUE),
-              mu.bmi_s = mean(bmi_s, na.rm = TRUE), sigma.bmi_s = sd(bmi_s, na.rm = TRUE),
-              mu.bmi_err = mean(bmi_error, na.rm = TRUE), sigma.bmi_err = sd(bmi_error, na.rm = TRUE),
-              p.htn_m = mean(htn_m, na.rm = TRUE), p.htn_s = mean(htn_s, na.rm = TRUE),
-              p.htn_misclassified = mean(htn_m != htn_s, na.rm = TRUE)) %>% 
-    drop_na() %>% 
-    write.csv(., "out/case5_params.csv")    
+# model parameters for genderating HTN measured, also common across cases
+fit_y  <- glm(htn_m ~ bmi_m + eth5 + gender + ob, family = binomial(), data =  nhanes)
+write.csv(coefficients(fit_y), file = "out/generate_htn_m_model_coefs.csv")
+saveRDS(coefficients(fit_y), file = "out/params/generate_htn_m_model_coefs.Rds")
 
 
-# For report, plot distributions of BMI by obesity and gender
+# CASE 1: misclassification is random and does not depend on L ############
+
+fit_xs    <- glm(bmi_s ~ bmi_m, family = gaussian(), data = nhanes)
+xs_params <- c(coefficients(fit_xs), sigma2 = summary(fit_xs)$dispersion)
+write.csv(xs_params, file = "out/c1_generate_bmi_s_coefs.csv")
+saveRDS(xs_params, file = "out/params/c1_generate_bmi_s_coefs.Rds")
+
+fit_ys <- glm(htn_s ~ htn_m, family = binomial(), data = nhanes)
+ys_params <- coefficients(fit_ys)
+write.csv(ys_params, file = "out/c1_generate_htn_s_coefs.csv")
+saveRDS(ys_params, file = "out/params/c1_generate_htn_s_coefs.Rds")
+
+
+# CASE 2: misclassification depends on ethnicity alone ############
+
+fit_xs    <- glm(bmi_s ~ bmi_m + eth5, family = gaussian(), data = nhanes)
+xs_params <- c(coefficients(fit_xs), sigma2 = summary(fit_xs)$dispersion)
+write.csv(xs_params, file = "out/c2_generate_bmi_s_coefs.csv")
+saveRDS(xs_params, file = "out/params/c2_generate_bmi_s_coefs.Rds")
+
+fit_ys <- glm(htn_s ~ htn_m + eth5, family = binomial(), data = nhanes)
+ys_params <- coefficients(fit_ys)
+write.csv(ys_params, file = "out/c2_generate_htn_s_coefs.csv")
+saveRDS(ys_params, file = "out/params/c2_generate_htn_s_coefs.Rds")
+
+
+# CASE 3: misclassification depends on gender alone ############
+
+fit_xs    <- glm(bmi_s ~ bmi_m + gender, family = gaussian(), data = nhanes)
+xs_params <- c(coefficients(fit_xs), sigma2 = summary(fit_xs)$dispersion)
+write.csv(xs_params, file = "out/c3_generate_bmi_s_coefs.csv")
+saveRDS(xs_params, file = "out/params/c3_generate_bmi_s_coefs.Rds")
+
+fit_ys <- glm(htn_s ~ htn_m + gender, family = binomial(), data = nhanes)
+ys_params <- coefficients(fit_ys)
+write.csv(ys_params, file = "out/c3_generate_htn_s_coefs.csv")
+saveRDS(ys_params, file = "out/params/c3_generate_htn_s_coefs.Rds")
+
+
+# CASE 4: misclassification depends on obesity alone ############
+
+fit_xs    <- glm(bmi_s ~ bmi_m + ob, family = gaussian(), data = nhanes)
+xs_params <- c(coefficients(fit_xs), sigma2 = summary(fit_xs)$dispersion)
+write.csv(xs_params, file = "out/c4_generate_bmi_s_coefs.csv")
+saveRDS(xs_params, file = "out/params/c4_generate_bmi_s_coefs.Rds")
+
+fit_ys <- glm(htn_s ~ htn_m + ob, family = binomial(), data = nhanes)
+ys_params <- coefficients(fit_ys)
+write.csv(ys_params, file = "out/c4_generate_htn_s_coefs.csv")
+saveRDS(ys_params, file = "out/params/c4_generate_htn_s_coefs.Rds")
+
+
+# CASE 5: misclassification depends on obesity, ethnicity, and gender status ############
+
+fit_xs    <- glm(bmi_s ~ bmi_m + eth5 + gender + ob, family = gaussian(), data = nhanes)
+xs_params <- c(coefficients(fit_xs), sigma2 = summary(fit_xs)$dispersion)
+write.csv(xs_params, file = "out/c5_generate_bmi_s_coefs.csv")
+saveRDS(xs_params, file = "out/params/c5_generate_bmi_s_coefs.Rds")
+
+fit_ys <- glm(htn_s ~ htn_m + eth5 + gender + ob, family = binomial(), data = nhanes)
+ys_params <- coefficients(fit_ys)
+write.csv(ys_params, file = "out/c5_generate_htn_s_coefs.csv")
+saveRDS(ys_params, file = "out/params/c5_generate_htn_s_coefs.Rds")
+
+
+
+
+
+
+
+
+
+
+
+
+# For report, plot distributions of BMI by obesity and gender #####################
+
 plot_dat <- 
     nhanes %>% 
-    select(bmi_s, bmi_m, ob, eth5, age4, htn_m, htn_s, gender) %>% 
+    dplyr::select(bmi_s, bmi_m, ob, eth5, age4, htn_m, htn_s, gender) %>% 
     drop_na()
 plot_dat$ob <- factor(plot_dat$ob, levels = c("Under/Normal", "Overweight", "Obese"), labels = c("Under/Normal", "Overweight", "Obese"))
 

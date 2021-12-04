@@ -3,6 +3,7 @@ library(meerva)
 library(tidyr)
 
 setwd("C:/Users/user/Documents/GitHub/bst222-finalproj/data/simdata")
+setwd("/Volumes/GoogleDrive/My Drive/Matt/School/PhD /2021-2022/BST 222/Project/bst222-finalproj/data/simdata") # ml path
 #case1_100_0<-read.csv("case1/n100/pop_9.csv",header = T)
 
 set.seed(123)
@@ -14,7 +15,7 @@ for (i in 1:5) {
     for (k in 0:99) {
       simdat<-read.csv(paste0("case",i,"/n",j,"/pop_",k,".csv"),header = T)
       
-      #-- estimate beta
+      #-- estimate true beta
       #-- (1) beta_full data
       m1 <- glm(htn_m ~ bmi_m + factor(eth5) + factor(ob) + factor(gender), data=simdat, family="binomial")
       beta_full<-m1$coefficients[["bmi_m"]]
