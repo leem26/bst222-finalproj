@@ -15,7 +15,7 @@ for (i in 1:5) {
     for (k in 0:99) {
       simdat<-read.csv(paste0("case",i,"/n",j,"/pop_",k,".csv"),header = T)
       
-      #-- estimate true beta
+      #-- estimatie true beta
       #-- (1) beta_full data
       m1 <- glm(htn_m ~ bmi_m + factor(eth5) + factor(ob) + factor(gender), data=simdat, family="binomial")
       beta_full<-m1$coefficients[["bmi_m"]]
@@ -39,14 +39,14 @@ for (i in 1:5) {
       gamma_nonval<-m3$coefficients[["bmi_s"]]
       
       #-- (5) meerva
-      x_val <- cbind(x1 = val_data$bmi_m, x2 = val_data$bmi_s) #reference (gold-standard, measured)
-      xs_non <- cbind(x1s = nonval_data$bmi_m, x2 = nonval_data$bmi_s) #surrogate (self-reported)
-      xs_val <- cbind(x1s = val_data$bmi_m, x2 = val_data$bmi_s)
+      x_val <- cbind(x1 = val_data$bmi_m) #reference (gold-standard, measured)
+      xs_non <- cbind(x1s = nonval_data$bmi_s) #surrogate (self-reported)
+      xs_val <- cbind(x1s = val_data$bmi_s)
       y_val <- val_data$htn_m # true in validation (gold-standard, measured)
       ys_non <- nonval_data$htn_s # surrogate in non validation (self-reported)
       ys_val <- val_data$htn_s # surrogate in validation
       
-      brn.me = meerva.fit(x_val, y_val, xs_val, ys_val, xs_non, ys_non)
+      brn.me = meerva.fit(x_val = x_val, y_val = y_val, xs_val = xs_val, ys_val = ys_val, xs_non = xs_non, ys_non = ys_non)
       beta_aug <- brn.me$coef_beta[1,2] #???
       
       #-- calculate bias
@@ -85,21 +85,25 @@ output_sim_mse <- melt(as.data.frame(output_sim[,c(1:2,6:8)]), id.vars = c("case
 
 # empirical variance
 output_sim_long <- melt(as.data.frame(output_sim), id.vars = c("case","n"), variable.name = "estimator")
-estimator_var <- output_sim_long[, .(var_est = var(value)), by = c("case","n", "estimator")]
+estimator_var <- data.table(output_sim_long)[, .(var_est = var(value, na.rm = TRUE)), by = c("case", "n", "estimator")]
+
 #...error - don't know why..
 
 # Plot of bias, facet by case
-output_sim_bias %>% 
+biasplot <- output_sim_bias %>% 
   ggplot(aes(x = n, y = value, color = estimator)) + 
   geom_point() + 
   geom_line(alpha = 0.2) + 
   geom_abline(slope = 0, intercept = 0, alpha = 0.2) + 
   facet_wrap(~case) + 
   labs(x = "Sample size", y = "Mean bias") + 
-  theme_classic() 
+  theme_classic() + 
+  theme(legend.title = element_blank()) 
+
+ggsave(biasplot, filename = "../../out/fig/bias_plot.pdf", device = cairo_pdf, width = 8.5, height = 5, units = "in")
 
 # Plot of mse, facet by case
-output_sim_mse %>% 
+mseplot <- output_sim_mse %>% 
   ggplot(aes(x = n, y = value, color = estimator)) + 
   geom_point() + 
   geom_line(alpha = 0.2) + 
@@ -107,5 +111,8 @@ output_sim_mse %>%
   geom_abline(slope = 0, intercept = 0, alpha = 0.1) + 
   facet_wrap(~case) + 
   labs(x = "Sample size", y = "MSE") + 
-  theme_classic()
+  theme_classic() + 
+  theme(legend.title = element_blank()) 
+
+ggsave(mseplot, filename = "../../out/fig/mse_plot.pdf", device = cairo_pdf, width = 8.5, height = 5, units = "in")
 
